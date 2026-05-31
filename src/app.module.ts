@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { ConfigurationModule } from './configuration/configuration.module';
+import { DotnetModule } from './modules/dotnet/dotnet.module';
+import { PythonModule } from './modules/python/python.module';
 
 @Module({
-  imports: [HttpModule],
+  imports: [ConfigurationModule, DotnetModule, PythonModule],
   controllers: [AppController],
-  providers: [AppService],
 })
 export class AppModule {}
