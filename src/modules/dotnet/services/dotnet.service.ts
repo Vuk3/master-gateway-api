@@ -4,12 +4,14 @@ import axios from 'axios';
 import * as FormData from 'form-data';
 import { firstValueFrom } from 'rxjs';
 import { ConfigurationService } from '../../../configuration/services/configuration.service';
+import { createDummyPrediction } from '../../shared/dummy-prediction';
 
 @Injectable()
 export class DotnetService {
   private readonly logger = new Logger(DotnetService.name);
   private readonly serviceUrl: string;
   private readonly requestTimeoutMs: number;
+  private readonly useDummyPredictions: boolean;
 
   constructor(
     private readonly httpService: HttpService,
@@ -21,9 +23,16 @@ export class DotnetService {
     this.requestTimeoutMs = this.configurationService.get(
       'SERVICE_REQUEST_TIMEOUT_MS',
     );
+    this.useDummyPredictions = this.configurationService.get(
+      'USE_DUMMY_PREDICTIONS',
+    );
   }
 
   async predict(file: Express.Multer.File) {
+    if (this.useDummyPredictions) {
+      return createDummyPrediction('dotnet', file);
+    }
+
     const formData = new FormData();
     formData.append('file', file.buffer, {
       filename: file.originalname,

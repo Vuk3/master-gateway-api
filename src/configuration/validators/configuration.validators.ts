@@ -2,11 +2,34 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsPositive,
   IsString,
   IsUrl,
 } from 'class-validator';
+
+function toBoolean(value: unknown) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (['true', '1', 'yes', 'on'].includes(normalizedValue)) {
+    return true;
+  }
+
+  if (['false', '0', 'no', 'off', ''].includes(normalizedValue)) {
+    return false;
+  }
+
+  return value;
+}
 
 export class EnvironmentValidator {
   @IsNotEmpty()
@@ -39,4 +62,8 @@ export class EnvironmentValidator {
   @IsPositive()
   @Type(() => Number)
   SERVICE_REQUEST_TIMEOUT_MS: number;
+
+  @IsBoolean()
+  @Transform(({ value }) => toBoolean(value))
+  USE_DUMMY_PREDICTIONS = false;
 }
