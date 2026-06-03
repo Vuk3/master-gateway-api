@@ -73,7 +73,7 @@ export class DotnetService {
   private logRequestError(error: unknown) {
     if (axios.isAxiosError(error)) {
       this.logger.error(
-        `.NET request failed with status ${error.response?.status ?? 'unknown'}`,
+        `.NET request failed with status ${error.response?.status ?? 'unknown'} (${error.code ?? 'no-code'})`,
         JSON.stringify(error.response?.data ?? error.message),
       );
 
