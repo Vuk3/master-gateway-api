@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
@@ -17,9 +18,17 @@ export class DotnetController {
     return this.dotnetService.health();
   }
 
+  @Get('models')
+  models() {
+    return this.dotnetService.getModels();
+  }
+
   @Post('predict')
   @UseInterceptors(FileInterceptor('file'))
-  predict(@UploadedFile() file: Express.Multer.File) {
-    return this.dotnetService.predict(file);
+  predict(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('model') modelId?: string,
+  ) {
+    return this.dotnetService.predict(file, modelId);
   }
 }

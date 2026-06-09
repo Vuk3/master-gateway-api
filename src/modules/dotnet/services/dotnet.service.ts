@@ -1,17 +1,30 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import * as FormData from 'form-data';
 import { firstValueFrom } from 'rxjs';
 import { ConfigurationService } from '../../../configuration/services/configuration.service';
-import { createDummyPrediction } from '../../shared/dummy-prediction';
+
+type ModelSummary = {
+  id: string;
+  name: string;
+  family: string;
+  annotationType: string;
+  isDefault: boolean;
+};
+
+type ModelsResponse = {
+  models: ModelSummary[];
+  defaultModelId: string | null;
+};
 
 @Injectable()
-export class DotnetService {
+export class DotnetService implements OnModuleInit {
   private readonly logger = new Logger(DotnetService.name);
   private readonly serviceUrl: string;
   private readonly requestTimeoutMs: number;
-  private readonly useDummyPredictions: boolean;
+  private availableModels: ModelSummary[] = [];
+  private defaultModelId: string | null = null;
 
   constructor(
     private readonly httpService: HttpService,
@@ -23,21 +36,32 @@ export class DotnetService {
     this.requestTimeoutMs = this.configurationService.get(
       'SERVICE_REQUEST_TIMEOUT_MS',
     );
-    this.useDummyPredictions = this.configurationService.get(
-      'USE_DUMMY_PREDICTIONS',
-    );
   }
 
-  async predict(file: Express.Multer.File) {
-    if (this.useDummyPredictions) {
-      return createDummyPrediction('dotnet', file);
+  async onModuleInit() {
+    await this.refreshModels();
+  }
+
+  async getModels() {
+    if (!this.availableModels.length) {
+      await this.refreshModels();
     }
 
+    return {
+      models: this.availableModels,
+      defaultModelId: this.defaultModelId,
+    };
+  }
+
+  async predict(file: Express.Multer.File, modelId?: string) {
     const formData = new FormData();
     formData.append('file', file.buffer, {
       filename: file.originalname,
       contentType: file.mimetype,
     });
+    if (modelId) {
+      formData.append('model', modelId);
+    }
 
     try {
       const response = await firstValueFrom(
@@ -68,6 +92,27 @@ export class DotnetService {
 
   private normalizeServiceUrl(serviceUrl: string) {
     return serviceUrl.replace(/\/+$/, '');
+  }
+
+  private async refreshModels() {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<ModelsResponse>(`${this.serviceUrl}/models`, {
+          timeout: this.requestTimeoutMs,
+        }),
+      );
+
+      this.availableModels = response.data.models ?? [];
+      this.defaultModelId = response.data.defaultModelId ?? null;
+
+      this.logger.log(
+        `Loaded ${this.availableModels.length} .NET model entries`,
+      );
+    } catch (error) {
+      this.logRequestError(error);
+      this.availableModels = [];
+      this.defaultModelId = null;
+    }
   }
 
   private logRequestError(error: unknown) {

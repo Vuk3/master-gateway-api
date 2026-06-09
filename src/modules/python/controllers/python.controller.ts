@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
@@ -17,9 +18,17 @@ export class PythonController {
     return this.pythonService.health();
   }
 
+  @Get('models')
+  models() {
+    return this.pythonService.getModels();
+  }
+
   @Post('predict')
   @UseInterceptors(FileInterceptor('file'))
-  predict(@UploadedFile() file: Express.Multer.File) {
-    return this.pythonService.predict(file);
+  predict(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('model') modelId?: string,
+  ) {
+    return this.pythonService.predict(file, modelId);
   }
 }
