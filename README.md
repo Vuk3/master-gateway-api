@@ -1,99 +1,93 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Object Detection Gateway
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The NestJS gateway of my master's thesis, a system that runs the same image through a
+YOLOv8m model in Python and an ML.NET model in .NET and compares the two. The frontend knows
+only this address. The gateway forwards each upload to the Python or the .NET service and
+passes the answer back, which leaves the two ML services free to change without the client
+noticing.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+The full write-up, with the results: [vukcvetkovic.com/projects/object-detection](https://vukcvetkovic.com/projects/object-detection/)
 
-## Description
+## The system
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| Repository | Role |
+| --- | --- |
+| [master-frontend](https://github.com/Vuk3/master-frontend) | React dashboard: sends an image, draws both results side by side |
+| **master-gateway-api** | NestJS gateway, the one address the frontend calls |
+| [master-python-api](https://github.com/Vuk3/master-python-api) | FastAPI service running the YOLOv8m models |
+| [master-dotnet-api](https://github.com/Vuk3/master-dotnet-api) | ASP.NET Core service running the ML.NET models |
 
-## Project setup
-
-```bash
-$ yarn install
+```
+frontend  ->  gateway  ->  python-api   YOLOv8m, port 8123
+                       ->  dotnet-api   ML.NET, port 7146
 ```
 
-## Compile and run the project
+## Endpoints
 
-```bash
-# development
-$ yarn run start
+| Method | Path | Returns |
+| --- | --- | --- |
+| `GET` | `/health` | The gateway's own health check |
+| `GET` | `/python/health`, `/dotnet/health` | Each service's health check, passed through |
+| `GET` | `/python/models`, `/dotnet/models` | The models a service can run, and its default |
+| `POST` | `/python/predict`, `/dotnet/predict` | The detections for one image |
 
-# watch mode
-$ yarn run start:dev
+`predict` takes `multipart/form-data`: `file` is the image, and `model` is an optional id from
+the matching `/models` list. Without it the service uses its default model.
 
-# production mode
-$ yarn run start:prod
+Both services answer in one format, which is what lets a single frontend draw either result:
+
+```json
+{
+  "model": "YOLOv8m",
+  "modelId": "fully-annotated/yolov8m_800_e50_best.pt",
+  "annotationType": "fully-annotated",
+  "imageWidth": 1920,
+  "imageHeight": 1080,
+  "detections": [
+    {
+      "label": "Helmet",
+      "score": 0.93,
+      "box": { "x1": 812.4, "y1": 140.2, "x2": 918.7, "y2": 236.5 }
+    }
+  ],
+  "fileName": "site.jpg",
+  "contentType": "image/jpeg"
+}
 ```
 
-## Run tests
+## How it works
+
+- **Configuration is checked at startup.** Every variable below is validated with
+  class-validator, and a missing or malformed one stops the gateway before it takes a request.
+- **Model catalogs are fetched once.** Each service's `/models` is read when the gateway starts
+  and kept in memory. If a service was down at that moment, its catalog is fetched again on the
+  next request for it.
+- **Uploads stay in memory.** The image is held as a buffer and sent on as a new multipart body,
+  so nothing is written to disk on the way through.
+- **Every call to a service has a timeout**, and a failed call is logged with its HTTP status
+  and its axios error code before the error goes back to the client.
+
+## Configuration
+
+Copy `.env.example` to `.env`.
+
+| Variable | In `.env.example` | Meaning |
+| --- | --- | --- |
+| `PORT` | `3000` | Port the gateway listens on |
+| `CORS_ORIGINS` | `http://localhost:5173` | Origins allowed to call it, comma-separated |
+| `PYTHON_API_BASE_URL` | `http://localhost:8123` | The Python service |
+| `DOTNET_API_BASE_URL` | `http://localhost:7146` | The .NET service |
+| `SERVICE_REQUEST_TIMEOUT_MS` | `60000` | Timeout for each call to a service, in milliseconds |
+
+## Running it
+
+Node 20 and Yarn:
 
 ```bash
-# unit tests
-$ yarn run test
-
-# e2e tests
-$ yarn run test:e2e
-
-# test coverage
-$ yarn run test:cov
+yarn install
+cp .env.example .env
+yarn start:dev
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ yarn install -g mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+The gateway starts even when a service is down: that service's catalog stays empty until a
+later request finds it up.
